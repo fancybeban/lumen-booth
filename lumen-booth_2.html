@@ -1,0 +1,919 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Lumen Booth — Online Photobooth</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  :root{
+    --curtain:#2B1114;
+    --curtain-light:#3E1B1F;
+    --gold:#D4A017;
+    --cream:#F1E7D0;
+    --rose:#C97C82;
+    --line: rgba(241,231,208,0.14);
+    --radius: 4px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--curtain);
+    background-image:
+      radial-gradient(ellipse at top, rgba(212,160,23,0.08), transparent 55%),
+      repeating-linear-gradient(180deg, rgba(0,0,0,0.12) 0px, rgba(0,0,0,0.12) 1px, transparent 1px, transparent 68px);
+    color:var(--cream);
+    font-family:'Space Grotesk', sans-serif;
+    min-height:100vh;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    padding:32px 18px 60px;
+  }
+  .brand{
+    display:flex;
+    align-items:baseline;
+    gap:10px;
+    margin-bottom:6px;
+  }
+  .brand .bulb{
+    font-size:22px;
+    filter:drop-shadow(0 0 6px rgba(212,160,23,0.6));
+  }
+  h1{
+    font-family:'Bebas Neue', sans-serif;
+    font-size:clamp(38px,6vw,58px);
+    letter-spacing:2px;
+    margin:0;
+    line-height:0.9;
+    color:var(--cream);
+  }
+  h1 span{ color:var(--gold); }
+  .tagline{
+    color:var(--rose);
+    font-size:14px;
+    margin:0 0 34px;
+    text-align:center;
+    max-width:420px;
+    line-height:1.5;
+  }
+  .stage{
+    width:100%;
+    max-width:980px;
+    display:grid;
+    grid-template-columns:1.15fr 0.85fr;
+    gap:26px;
+    align-items:start;
+  }
+  @media (max-width:800px){
+    .stage{ grid-template-columns:1fr; }
+  }
+
+  /* camera panel */
+  .camera-panel{
+    background:var(--curtain-light);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:14px;
+    position:relative;
+  }
+  .camera-frame{
+    position:relative;
+    width:100%;
+    aspect-ratio:4/3;
+    background:#000;
+    border-radius:2px;
+    overflow:hidden;
+  }
+  video{
+    width:100%;
+    height:100%;
+    object-fit:cover;
+    display:block;
+    transform:scaleX(-1);
+  }
+  .flash{
+    position:absolute; inset:0;
+    background:#fff;
+    opacity:0;
+    pointer-events:none;
+  }
+  .flash.on{ animation:flashpop 260ms ease-out; }
+  @keyframes flashpop{
+    0%{opacity:0.95;} 100%{opacity:0;}
+  }
+  .countdown{
+    position:absolute; inset:0;
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Bebas Neue', sans-serif;
+    font-size:96px;
+    color:#fff;
+    text-shadow:0 0 24px rgba(0,0,0,0.6);
+    pointer-events:none;
+    opacity:0;
+    transition:opacity 120ms ease;
+  }
+  .countdown.show{ opacity:1; }
+  .cam-select{
+    width:100%;
+    background:var(--curtain);
+    border:1px solid var(--line);
+    color:var(--cream);
+    font-family:'Space Grotesk', sans-serif;
+    font-size:12px;
+    padding:8px 10px;
+    border-radius:6px;
+    margin-bottom:10px;
+  }
+
+  .shot-counter{
+    position:absolute;
+    top:24px; left:24px;
+    font-size:12px;
+    letter-spacing:1px;
+    background:rgba(0,0,0,0.55);
+    padding:5px 10px;
+    border-radius:20px;
+  }
+  .cam-error{
+    padding:40px 20px;
+    text-align:center;
+    font-size:13px;
+    color:var(--rose);
+    line-height:1.6;
+  }
+  .cam-actions{
+    display:flex; justify-content:space-between; align-items:center;
+    margin-top:12px;
+  }
+  .icon-btn{
+    background:none;
+    border:1px solid var(--line);
+    color:var(--cream);
+    width:38px; height:38px;
+    border-radius:50%;
+    font-size:16px;
+    cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+    transition:border-color 120ms ease, background 120ms ease;
+  }
+  .icon-btn:hover, .icon-btn:focus-visible{ border-color:var(--gold); }
+  .icon-btn[aria-pressed="true"]{ background:var(--gold); color:var(--curtain); border-color:var(--gold); }
+
+  .shutter{
+    font-family:'Bebas Neue', sans-serif;
+    font-size:20px;
+    letter-spacing:1.5px;
+    background:var(--gold);
+    color:var(--curtain);
+    border:none;
+    padding:12px 30px;
+    border-radius:30px;
+    cursor:pointer;
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    transition:transform 120ms ease, box-shadow 120ms ease;
+  }
+  .shutter:hover{ transform:translateY(-1px); box-shadow:0 6px 18px rgba(212,160,23,0.35); }
+  .shutter:disabled{ opacity:0.5; cursor:default; transform:none; box-shadow:none; }
+
+  /* controls panel */
+  .controls-panel{
+    display:flex;
+    flex-direction:column;
+    gap:22px;
+  }
+  .control-group h2{
+    font-family:'Bebas Neue', sans-serif;
+    font-size:15px;
+    letter-spacing:1.5px;
+    margin:0 0 10px;
+    color:var(--gold);
+  }
+  .option-row{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+  }
+  .chip{
+    background:var(--curtain-light);
+    border:1px solid var(--line);
+    color:var(--cream);
+    font-family:'Space Grotesk', sans-serif;
+    font-size:12.5px;
+    padding:8px 13px;
+    border-radius:20px;
+    cursor:pointer;
+    transition:border-color 120ms ease, background 120ms ease;
+  }
+  .chip:hover, .chip:focus-visible{ border-color:var(--gold); }
+  .chip[aria-pressed="true"]{
+    background:var(--gold);
+    color:var(--curtain);
+    border-color:var(--gold);
+    font-weight:600;
+  }
+  .swatch{
+    width:30px; height:30px;
+    border-radius:50%;
+    border:2px solid var(--line);
+    cursor:pointer;
+    padding:0;
+  }
+  .swatch[aria-pressed="true"]{
+    border-color:var(--gold);
+    box-shadow:0 0 0 2px var(--curtain-light), 0 0 0 3px var(--gold);
+  }
+  .sticker-chip{ font-size:16px; padding:6px 12px; }
+
+  .shutter-row{
+    display:flex;
+    justify-content:center;
+    margin-top:4px;
+  }
+
+  /* result */
+  .result-wrap{
+    display:none;
+    flex-direction:column;
+    align-items:center;
+    gap:16px;
+  }
+  .result-wrap.show{ display:flex; }
+  #resultCanvas{
+    max-width:100%;
+    border-radius:2px;
+    box-shadow:0 20px 40px rgba(0,0,0,0.4);
+  }
+  .result-actions{
+    display:flex;
+    gap:12px;
+  }
+  .ghost-btn{
+    background:none;
+    border:1px solid var(--line);
+    color:var(--cream);
+    font-family:'Space Grotesk', sans-serif;
+    font-size:13px;
+    padding:10px 18px;
+    border-radius:24px;
+    cursor:pointer;
+  }
+  .ghost-btn:hover{ border-color:var(--gold); }
+  .ghost-btn[aria-pressed="true"]{ border-color:var(--gold); color:var(--gold); }
+
+  .edit-hint{
+    font-size:11px;
+    letter-spacing:0.5px;
+    color:rgba(241,231,208,0.55);
+    text-align:center;
+    margin:-6px 0 0;
+  }
+
+  .share-panel{
+    display:none;
+    flex-direction:column;
+    align-items:center;
+    gap:12px;
+    background:var(--curtain-light);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:20px;
+    width:100%;
+    max-width:280px;
+  }
+  .share-panel.show{ display:flex; }
+  .share-panel #qrBox{
+    background:#fff;
+    padding:10px;
+    border-radius:4px;
+    line-height:0;
+  }
+  .share-panel p{
+    font-size:11.5px;
+    color:rgba(241,231,208,0.65);
+    text-align:center;
+    line-height:1.5;
+    margin:0;
+  }
+  .link-row{
+    display:flex;
+    gap:6px;
+    width:100%;
+  }
+  .link-row input{
+    flex:1;
+    min-width:0;
+    background:var(--curtain);
+    border:1px solid var(--line);
+    color:var(--cream);
+    font-family:'Space Grotesk', sans-serif;
+    font-size:11.5px;
+    padding:8px 10px;
+    border-radius:6px;
+  }
+  .link-row .ghost-btn{
+    padding:8px 14px;
+    font-size:12px;
+  }
+
+  .shared-viewer{
+    display:none;
+    position:fixed; inset:0;
+    background:rgba(20,8,10,0.9);
+    align-items:center;
+    justify-content:center;
+    z-index:60;
+    padding:20px;
+  }
+  .shared-viewer.show{ display:flex; }
+  .shared-viewer-card{
+    background:var(--curtain-light);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:20px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:14px;
+    max-width:420px;
+  }
+  .shared-viewer-card img{
+    max-width:100%;
+    border-radius:2px;
+    box-shadow:0 20px 40px rgba(0,0,0,0.4);
+  }
+
+  .toast{
+    position:fixed;
+    bottom:24px; left:50%;
+    transform:translateX(-50%) translateY(10px);
+    background:var(--gold);
+    color:var(--curtain);
+    font-size:13px;
+    font-weight:600;
+    padding:10px 20px;
+    border-radius:24px;
+    opacity:0;
+    pointer-events:none;
+    transition:opacity 180ms ease, transform 180ms ease;
+    z-index:50;
+  }
+  .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+
+  footer{
+    margin-top:40px;
+    font-size:11px;
+    letter-spacing:1px;
+    color:rgba(241,231,208,0.4);
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    .flash.on{ animation:none; }
+    .shutter, .icon-btn{ transition:none; }
+  }
+</style>
+</head>
+<body>
+
+  <div class="brand">
+    <span class="bulb">💡</span>
+    <h1>LUMEN<span>BOOTH</span></h1>
+  </div>
+  <p class="tagline">A free online photobooth. Pick a layout, strike a pose, and take your strip home — no app, no login.</p>
+
+  <div class="stage">
+
+    <!-- CAMERA -->
+    <div class="camera-panel">
+      <select id="camSelect" class="cam-select" title="Choose camera" style="display:none;"></select>
+      <div class="camera-frame" id="cameraFrame">
+        <video id="video" autoplay playsinline muted></video>
+        <div class="flash" id="flash"></div>
+        <div class="countdown" id="countdown"></div>
+        <div class="shot-counter" id="shotCounter" style="display:none;"></div>
+      </div>
+      <div class="cam-actions">
+        <div style="display:flex; gap:8px;">
+          <button class="icon-btn" id="mirrorToggle" aria-pressed="true" title="Mirror">⇋</button>
+          <button class="icon-btn" id="switchCam" title="Switch camera">⟳</button>
+        </div>
+        <div class="shutter-row">
+          <button class="shutter" id="startBtn">● Start</button>
+        </div>
+        <div style="width:38px;"></div>
+      </div>
+    </div>
+
+    <!-- CONTROLS -->
+    <div class="controls-panel">
+      <div class="control-group">
+        <h2>Layout</h2>
+        <div class="option-row" id="layoutRow"></div>
+      </div>
+      <div class="control-group">
+        <h2>Filter</h2>
+        <div class="option-row" id="filterRow"></div>
+      </div>
+      <div class="control-group">
+        <h2>Frame color</h2>
+        <div class="option-row" id="colorRow"></div>
+      </div>
+      <div class="control-group">
+        <h2>Stickers</h2>
+        <div class="option-row" id="stickerRow"></div>
+      </div>
+      <div class="control-group">
+        <h2>Caption</h2>
+        <input type="text" id="captionInput" class="cam-select" maxlength="24" value="LUMEN BOOTH" style="display:block; margin-bottom:0;">
+      </div>
+    </div>
+  </div>
+
+  <!-- RESULT -->
+  <div class="result-wrap" id="resultWrap">
+    <canvas id="resultCanvas"></canvas>
+    <p class="edit-hint">Frame, color and emoji still adjustable above — pick again to update your strip.</p>
+    <div class="result-actions">
+      <button class="ghost-btn" id="retakeBtn">↺ Retake</button>
+      <button class="ghost-btn" id="shareBtn" style="display:none;">↗ Share</button>
+      <button class="ghost-btn" id="copyBtn">⧉ Copy</button>
+      <button class="ghost-btn" id="qrBtn" aria-pressed="false">▦ QR</button>
+      <button class="shutter" id="downloadBtn">⬇ Download</button>
+    </div>
+    <div class="share-panel" id="sharePanel">
+      <div id="qrBox"></div>
+      <div class="link-row">
+        <input type="text" id="linkField" readonly aria-label="Share link">
+        <button class="ghost-btn" id="copyLinkBtn">Copy</button>
+      </div>
+      <p id="shareNote">Scan with any camera, or send the link — opens this exact photo on any device.</p>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <!-- Shown when someone opens a shared link -->
+  <div class="shared-viewer" id="sharedViewer">
+    <div class="shared-viewer-card">
+      <p class="edit-hint" style="margin-bottom:2px;">Someone shared a Lumen Booth photo with you</p>
+      <img id="sharedImg" alt="Shared photobooth strip">
+      <div class="result-actions">
+        <button class="shutter" id="sharedSaveBtn">⬇ Save photo</button>
+        <button class="ghost-btn" id="sharedCloseBtn">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <footer>LUMEN BOOTH · captured entirely in your browser, nothing is uploaded</footer>
+
+<script>
+(function(){
+  const video = document.getElementById('video');
+  const cameraFrame = document.getElementById('cameraFrame');
+  const flashEl = document.getElementById('flash');
+  const countdownEl = document.getElementById('countdown');
+  const shotCounter = document.getElementById('shotCounter');
+  const startBtn = document.getElementById('startBtn');
+  const mirrorToggle = document.getElementById('mirrorToggle');
+  const switchCam = document.getElementById('switchCam');
+  const camSelect = document.getElementById('camSelect');
+  const resultWrap = document.getElementById('resultWrap');
+  const resultCanvas = document.getElementById('resultCanvas');
+  const retakeBtn = document.getElementById('retakeBtn');
+  const downloadBtn = document.getElementById('downloadBtn');
+  const shareBtn = document.getElementById('shareBtn');
+  const copyBtn = document.getElementById('copyBtn');
+  const qrBtn = document.getElementById('qrBtn');
+  const sharePanel = document.getElementById('sharePanel');
+  const qrBox = document.getElementById('qrBox');
+  const linkField = document.getElementById('linkField');
+  const copyLinkBtn = document.getElementById('copyLinkBtn');
+  const shareNote = document.getElementById('shareNote');
+  const toast = document.getElementById('toast');
+  const sharedViewer = document.getElementById('sharedViewer');
+  const sharedImg = document.getElementById('sharedImg');
+  const sharedSaveBtn = document.getElementById('sharedSaveBtn');
+  const sharedCloseBtn = document.getElementById('sharedCloseBtn');
+  const captionInput = document.getElementById('captionInput');
+
+  let currentShareId = null; // reused across edits so we don't leave orphaned storage entries
+
+  let capturedShots = null; // raw, unfiltered captures — kept so everything stays editable after the fact
+
+  let mirrored = true;
+  let facingMode = 'user';
+  let currentStream = null;
+
+  const LAYOUTS = [
+    { id:'strip4', label:'Strip ×4', count:4, cols:1 },
+    { id:'strip3', label:'Strip ×3', count:3, cols:1 },
+    { id:'grid4',  label:'Grid ×4',  count:4, cols:2 },
+    { id:'single', label:'Single',   count:1, cols:1 },
+  ];
+  const FILTERS = [
+    { id:'none',  label:'Original', css:'none' },
+    { id:'mono',  label:'B&W',      css:'grayscale(1) contrast(1.1)' },
+    { id:'sepia', label:'Sepia',    css:'sepia(0.75) contrast(1.05) brightness(1.05)' },
+    { id:'warm',  label:'Warm',     css:'saturate(1.3) sepia(0.15) brightness(1.05)' },
+    { id:'cool',  label:'Cool',     css:'saturate(1.1) hue-rotate(-8deg) brightness(1.05)' },
+    { id:'film',  label:'Faded',    css:'contrast(0.9) brightness(1.12) saturate(0.82)' },
+  ];
+  const COLORS = [
+    { id:'curtain', label:'Curtain', hex:'#2B1114' },
+    { id:'cream',   label:'Cream',   hex:'#F1E7D0' },
+    { id:'gold',    label:'Mustard', hex:'#D4A017' },
+    { id:'rose',    label:'Rose',    hex:'#C97C82' },
+    { id:'ink',     label:'Ink',     hex:'#14181C' },
+    { id:'sage',    label:'Sage',    hex:'#8FA38B' },
+    { id:'white',   label:'White',   hex:'#FFFFFF' },
+  ];
+  const STICKERS = [
+    { id:'heart', glyph:'♡' },
+    { id:'star',  glyph:'✦' },
+    { id:'moon',  glyph:'☾' },
+    { id:'film',  glyph:'✧' },
+    { id:'none',  glyph:'—' },
+  ];
+
+  let state = {
+    layout: LAYOUTS[0],
+    filter: FILTERS[0],
+    color: COLORS[0],
+    sticker: STICKERS[4],
+    caption: 'LUMEN BOOTH',
+  };
+
+  function buildOptionRow(container, items, stateKey, renderChip){
+    container.innerHTML = '';
+    items.forEach((item, i) => {
+      const btn = renderChip(item);
+      btn.setAttribute('aria-pressed', item.id === state[stateKey].id ? 'true' : 'false');
+      btn.addEventListener('click', () => {
+        state[stateKey] = item;
+        [...container.children].forEach(c => c.setAttribute('aria-pressed','false'));
+        btn.setAttribute('aria-pressed','true');
+        if (capturedShots) renderComposition();
+      });
+      container.appendChild(btn);
+    });
+  }
+
+  buildOptionRow(document.getElementById('layoutRow'), LAYOUTS, 'layout', item => {
+    const b = document.createElement('button');
+    b.className = 'chip';
+    b.textContent = item.label;
+    return b;
+  });
+  buildOptionRow(document.getElementById('filterRow'), FILTERS, 'filter', item => {
+    const b = document.createElement('button');
+    b.className = 'chip';
+    b.textContent = item.label;
+    b.addEventListener('mouseenter', () => { video.style.filter = item.css; });
+    b.addEventListener('mouseleave', () => { video.style.filter = state.filter.css; });
+    return b;
+  });
+  buildOptionRow(document.getElementById('colorRow'), COLORS, 'color', item => {
+    const b = document.createElement('button');
+    b.className = 'swatch';
+    b.style.background = item.hex;
+    b.title = item.label;
+    b.setAttribute('aria-label', item.label);
+    return b;
+  });
+  buildOptionRow(document.getElementById('stickerRow'), STICKERS, 'sticker', item => {
+    const b = document.createElement('button');
+    b.className = 'chip sticker-chip';
+    b.textContent = item.glyph;
+    b.setAttribute('aria-label', item.id);
+    return b;
+  });
+  // apply default filter to preview
+  video.style.filter = state.filter.css;
+  document.getElementById('filterRow').addEventListener('mouseleave', () => {
+    video.style.filter = state.filter.css;
+  });
+
+  captionInput.addEventListener('input', () => {
+    state.caption = captionInput.value.trim() || 'LUMEN BOOTH';
+    if (capturedShots) renderComposition();
+  });
+
+  mirrorToggle.addEventListener('click', () => {
+    mirrored = !mirrored;
+    mirrorToggle.setAttribute('aria-pressed', mirrored ? 'true':'false');
+    video.style.transform = mirrored ? 'scaleX(-1)' : 'scaleX(1)';
+  });
+
+  async function startCamera(deviceId){
+    if (currentStream){
+      currentStream.getTracks().forEach(t => t.stop());
+    }
+    try{
+      const videoConstraints = deviceId
+        ? { deviceId:{ exact: deviceId }, width:{ideal:1280}, height:{ideal:960} }
+        : { facingMode, width:{ideal:1280}, height:{ideal:960} };
+      currentStream = await navigator.mediaDevices.getUserMedia({
+        video: videoConstraints,
+        audio:false
+      });
+      video.srcObject = currentStream;
+      startBtn.disabled = false;
+      await populateCameraList();
+    }catch(err){
+      cameraFrame.innerHTML = '<div class="cam-error">Camera access was blocked or is unavailable.<br>Allow camera permission in your browser and reload to use Lumen Booth.</div>';
+      startBtn.disabled = true;
+    }
+  }
+
+  // Lists every available camera so you can pick the right one — laptops
+  // with an infrared sensor for Windows Hello often expose it as a
+  // separate "camera" that the browser can pick by default, which shows
+  // up as a flat green/grey image since IR sensors don't capture color.
+  async function populateCameraList(){
+    try{
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const cams = devices.filter(d => d.kind === 'videoinput');
+      if (cams.length < 2){ camSelect.style.display = 'none'; return; }
+
+      const activeTrack = currentStream && currentStream.getVideoTracks()[0];
+      const activeId = activeTrack ? activeTrack.getSettings().deviceId : null;
+
+      camSelect.innerHTML = '';
+      cams.forEach((cam, i) => {
+        const opt = document.createElement('option');
+        opt.value = cam.deviceId;
+        const label = cam.label || `Camera ${i+1}`;
+        opt.textContent = /ir|infrared/i.test(label) ? label + ' (may look green)' : label;
+        if (cam.deviceId === activeId) opt.selected = true;
+        camSelect.appendChild(opt);
+      });
+      camSelect.style.display = 'block';
+    }catch(err){ /* enumeration not supported — picker just stays hidden */ }
+  }
+
+  camSelect.addEventListener('change', () => startCamera(camSelect.value));
+  switchCam.addEventListener('click', () => {
+    facingMode = facingMode === 'user' ? 'environment' : 'user';
+    startCamera();
+  });
+  startCamera();
+
+  function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
+
+  async function countdownTo(n){
+    for(let i=n;i>0;i--){
+      countdownEl.textContent = i;
+      countdownEl.classList.add('show');
+      await sleep(700);
+      countdownEl.classList.remove('show');
+      await sleep(80);
+    }
+  }
+
+  function captureFrame(){
+    const c = document.createElement('canvas');
+    const vw = video.videoWidth, vh = video.videoHeight;
+    c.width = vw; c.height = vh;
+    const ctx = c.getContext('2d');
+    if (mirrored){
+      ctx.translate(vw,0);
+      ctx.scale(-1,1);
+    }
+    ctx.drawImage(video, 0, 0, vw, vh);
+    return c;
+  }
+
+  function flashPop(){
+    flashEl.classList.remove('on');
+    void flashEl.offsetWidth;
+    flashEl.classList.add('on');
+  }
+
+  async function runCaptureSequence(){
+    startBtn.disabled = true;
+    const layout = state.layout;
+    const shots = [];
+    shotCounter.style.display = 'block';
+    for(let i=0;i<layout.count;i++){
+      shotCounter.textContent = `SHOT ${i+1} / ${layout.count}`;
+      await countdownTo(3);
+      flashPop();
+      await sleep(120);
+      shots.push(captureFrame());
+      await sleep(500);
+    }
+    shotCounter.style.display = 'none';
+    capturedShots = shots;
+    renderComposition();
+    startBtn.disabled = false;
+  }
+
+  // Rebuilds the strip from the stored raw shots using whatever layout,
+  // filter, frame color and sticker are currently selected — this is what
+  // makes the result stay fully editable after the shots are taken.
+  function renderComposition(){
+    if (!capturedShots) return;
+    const layout = state.layout;
+    const count = Math.min(layout.count, capturedShots.length);
+    const shots = capturedShots.slice(0, count);
+    const cols = Math.min(layout.cols, count);
+    const rows = Math.ceil(count / cols);
+
+    const cellW = 560;
+    const cellH = Math.round(cellW * 0.75);
+    const pad = 28;
+    const gap = 16;
+    const canvasW = cols*cellW + (cols+1)*gap;
+    const footerH = 70;
+    const canvasH = pad*2 + rows*cellH + (rows-1)*gap + footerH;
+
+    const canvas = resultCanvas;
+    canvas.width = canvasW;
+    canvas.height = canvasH;
+    const ctx = canvas.getContext('2d');
+
+    ctx.fillStyle = state.color.hex;
+    ctx.fillRect(0,0,canvasW,canvasH);
+
+    shots.forEach((shotCanvas, i) => {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const x = gap + col*(cellW+gap);
+      const y = pad + row*(cellH+gap);
+      const sAspect = shotCanvas.width/shotCanvas.height;
+      const dAspect = cellW/cellH;
+      let sx,sy,sw,sh;
+      if (sAspect > dAspect){
+        sh = shotCanvas.height; sw = sh*dAspect;
+        sx = (shotCanvas.width-sw)/2; sy=0;
+      }else{
+        sw = shotCanvas.width; sh = sw/dAspect;
+        sx = 0; sy=(shotCanvas.height-sh)/2;
+      }
+      ctx.save();
+      ctx.filter = state.filter.css;
+      ctx.drawImage(shotCanvas, sx,sy,sw,sh, x,y,cellW,cellH);
+      ctx.restore();
+    });
+
+    if (state.sticker.id !== 'none'){
+      ctx.font = '38px sans-serif';
+      ctx.fillStyle = ['cream','white'].includes(state.color.id) ? '#2B1114' : '#F1E7D0';
+      ctx.globalAlpha = 0.85;
+      ctx.fillText(state.sticker.glyph, 14, 46);
+      ctx.fillText(state.sticker.glyph, canvasW-48, canvasH-footerH+34);
+      ctx.globalAlpha = 1;
+    }
+
+    ctx.font = '600 20px "Space Grotesk", sans-serif';
+    ctx.fillStyle = ['cream','white'].includes(state.color.id) ? '#2B1114' : '#F1E7D0';
+    ctx.textAlign = 'center';
+    const d = new Date();
+    const dateStr = d.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'});
+    ctx.fillText(state.caption + '  ·  ' + dateStr, canvasW/2, canvasH - footerH/2 + 7);
+    ctx.textAlign = 'left';
+
+    resultWrap.classList.add('show');
+    cameraFrame.closest('.camera-panel').style.display = 'none';
+
+    // if the share panel is open, keep the link/QR in sync with the edited strip
+    if (sharePanel.classList.contains('show')) buildShareLink();
+  }
+
+  startBtn.addEventListener('click', runCaptureSequence);
+
+  retakeBtn.addEventListener('click', () => {
+    capturedShots = null;
+    currentShareId = null;
+    resultWrap.classList.remove('show');
+    sharePanel.classList.remove('show');
+    qrBtn.setAttribute('aria-pressed','false');
+    cameraFrame.closest('.camera-panel').style.display = 'block';
+  });
+
+  downloadBtn.addEventListener('click', () => {
+    const link = document.createElement('a');
+    link.download = 'lumen-booth-strip.png';
+    link.href = resultCanvas.toDataURL('image/png');
+    link.click();
+    showToast('Saved to your downloads');
+  });
+
+  function showToast(msg){
+    toast.textContent = msg;
+    toast.classList.add('show');
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(() => toast.classList.remove('show'), 2200);
+  }
+
+  // ---- Local sharing: everything below stays on-device. Share uses the
+  // OS share sheet (AirDrop / Nearby Share / Bluetooth / local messaging
+  // apps) — nothing touches the internet. Copy puts the image straight
+  // on the clipboard. The QR/link encodes a plain https:// link (the
+  // only format phone cameras will actually open — embedding the photo
+  // itself inside the code doesn't work because browsers block scanned
+  // data: links as a phishing precaution), pointing at a copy of the
+  // photo kept only for this session.
+
+  if (navigator.share && navigator.canShare){
+    shareBtn.style.display = 'inline-flex';
+  }
+
+  async function canvasToBlob(canvas, type, quality){
+    return new Promise(res => canvas.toBlob(res, type, quality));
+  }
+
+  shareBtn.addEventListener('click', async () => {
+    try{
+      const blob = await canvasToBlob(resultCanvas, 'image/png');
+      const file = new File([blob], 'lumen-booth-strip.png', { type:'image/png' });
+      if (navigator.canShare({ files:[file] })){
+        await navigator.share({ files:[file], title:'Lumen Booth', text:'My photobooth strip' });
+      }else{
+        showToast('This device can\'t share files directly — try Copy or the link below');
+      }
+    }catch(err){
+      if (err.name !== 'AbortError') showToast('Share was cancelled');
+    }
+  });
+
+  copyBtn.addEventListener('click', async () => {
+    try{
+      const blob = await canvasToBlob(resultCanvas, 'image/png');
+      await navigator.clipboard.write([ new ClipboardItem({ 'image/png': blob }) ]);
+      showToast('Copied — paste it anywhere');
+    }catch(err){
+      showToast('Copy isn\'t supported in this browser');
+    }
+  });
+
+  qrBtn.addEventListener('click', () => {
+    const open = sharePanel.classList.toggle('show');
+    qrBtn.setAttribute('aria-pressed', open ? 'true' : 'false');
+    if (open) buildShareLink();
+  });
+
+  copyLinkBtn.addEventListener('click', async () => {
+    if (!linkField.value) return;
+    try{
+      await navigator.clipboard.writeText(linkField.value);
+      showToast('Link copied');
+    }catch(err){
+      linkField.select();
+      showToast('Select and copy the link above');
+    }
+  });
+
+  async function buildShareLink(){
+    qrBox.innerHTML = '';
+    linkField.value = 'Preparing…';
+    try{
+      if (!window.storage) throw new Error('storage unavailable');
+      currentShareId = currentShareId || (Date.now().toString(36) + Math.random().toString(36).slice(2,8));
+      const jpegUrl = resultCanvas.toDataURL('image/jpeg', 0.85);
+      await window.storage.set('photo:' + currentShareId, jpegUrl, true);
+      const link = location.href.split('#')[0] + '#photo=' + currentShareId;
+      linkField.value = link;
+      new QRCode(qrBox, { text: link, width:190, height:190, correctLevel: QRCode.CorrectLevel.M });
+      shareNote.textContent = 'Scan with any camera, or send the link — opens this exact photo on any device.';
+    }catch(err){
+      qrBox.innerHTML = '';
+      linkField.value = '';
+      shareNote.textContent = 'Links need this app open through its Claude link to work — use Share or Copy instead on this page.';
+    }
+  }
+
+  // ---- Receiving end: if this page was opened via a shared link, show
+  // the photo it points to.
+  async function checkForSharedPhoto(){
+    const m = location.hash.match(/photo=([a-zA-Z0-9_-]+)/);
+    if (!m || !window.storage) return;
+    try{
+      const res = await window.storage.get('photo:' + m[1], true);
+      if (res && res.value){
+        sharedImg.src = res.value;
+        sharedViewer.classList.add('show');
+      }
+    }catch(err){ /* link expired or not found — stay on the normal app */ }
+  }
+  checkForSharedPhoto();
+
+  sharedSaveBtn.addEventListener('click', () => {
+    const link = document.createElement('a');
+    link.download = 'lumen-booth-strip.jpg';
+    link.href = sharedImg.src;
+    link.click();
+  });
+  sharedCloseBtn.addEventListener('click', () => {
+    sharedViewer.classList.remove('show');
+    history.replaceState(null, '', location.pathname + location.search);
+  });
+})();
+</script>
+</body>
+</html>
