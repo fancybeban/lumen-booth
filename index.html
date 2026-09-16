@@ -18,7 +18,8 @@
     --line: rgba(241,231,208,0.14);
     --radius: 4px;
   }
-  *{box-sizing:border-box;}
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  button, select, input{ touch-action:manipulation; }
   html,body{margin:0;padding:0;}
   body{
     background:var(--curtain);
@@ -68,7 +69,7 @@
     gap:26px;
     align-items:start;
   }
-  @media (max-width:800px){
+  @media (max-width:900px){
     .stage{ grid-template-columns:1fr; }
   }
 
@@ -128,6 +129,21 @@
     border-radius:6px;
     margin-bottom:10px;
   }
+  .cam-select-row{
+    display:flex;
+    gap:8px;
+    align-items:center;
+    margin-bottom:10px;
+  }
+  .cam-select-row .cam-select{
+    flex:1;
+    margin-bottom:0;
+  }
+  .cam-select-row .icon-btn{
+    width:40px; height:40px;
+    flex-shrink:0;
+    font-size:15px;
+  }
 
   .shot-counter{
     position:absolute;
@@ -153,9 +169,9 @@
     background:none;
     border:1px solid var(--line);
     color:var(--cream);
-    width:38px; height:38px;
+    width:44px; height:44px;
     border-radius:50%;
-    font-size:16px;
+    font-size:17px;
     cursor:pointer;
     display:flex; align-items:center; justify-content:center;
     transition:border-color 120ms ease, background 120ms ease;
@@ -204,8 +220,8 @@
     border:1px solid var(--line);
     color:var(--cream);
     font-family:'Space Grotesk', sans-serif;
-    font-size:12.5px;
-    padding:8px 13px;
+    font-size:13px;
+    padding:10px 15px;
     border-radius:20px;
     cursor:pointer;
     transition:border-color 120ms ease, background 120ms ease;
@@ -218,7 +234,7 @@
     font-weight:600;
   }
   .swatch{
-    width:30px; height:30px;
+    width:36px; height:36px;
     border-radius:50%;
     border:2px solid var(--line);
     cursor:pointer;
@@ -390,7 +406,10 @@
 
     <!-- CAMERA -->
     <div class="camera-panel">
-      <select id="camSelect" class="cam-select" title="Choose camera" style="display:none;"></select>
+      <div class="cam-select-row" id="camSelectRow" style="display:none;">
+        <select id="camSelect" class="cam-select" title="Choose camera"></select>
+        <button class="icon-btn" id="refreshCams" title="Rescan for cameras">↻</button>
+      </div>
       <div class="camera-frame" id="cameraFrame">
         <video id="video" autoplay playsinline muted></video>
         <div class="flash" id="flash"></div>
@@ -405,7 +424,7 @@
         <div class="shutter-row">
           <button class="shutter" id="startBtn">● Start</button>
         </div>
-        <div style="width:38px;"></div>
+        <div style="width:44px;"></div>
       </div>
     </div>
 
@@ -482,6 +501,8 @@
   const mirrorToggle = document.getElementById('mirrorToggle');
   const switchCam = document.getElementById('switchCam');
   const camSelect = document.getElementById('camSelect');
+  const camSelectRow = document.getElementById('camSelectRow');
+  const refreshCams = document.getElementById('refreshCams');
   const resultWrap = document.getElementById('resultWrap');
   const resultCanvas = document.getElementById('resultCanvas');
   const retakeBtn = document.getElementById('retakeBtn');
@@ -638,7 +659,7 @@
     try{
       const devices = await navigator.mediaDevices.enumerateDevices();
       const cams = devices.filter(d => d.kind === 'videoinput');
-      if (cams.length < 2){ camSelect.style.display = 'none'; return; }
+      if (cams.length < 2){ camSelectRow.style.display = 'none'; return; }
 
       const activeTrack = currentStream && currentStream.getVideoTracks()[0];
       const activeId = activeTrack ? activeTrack.getSettings().deviceId : null;
@@ -652,11 +673,20 @@
         if (cam.deviceId === activeId) opt.selected = true;
         camSelect.appendChild(opt);
       });
-      camSelect.style.display = 'block';
-    }catch(err){ /* enumeration not supported — picker just stays hidden */ }
+      camSelectRow.style.display = 'flex';
+    }catch(err){ /* enumeration not supported — row just stays hidden */ }
   }
 
   camSelect.addEventListener('change', () => startCamera(camSelect.value));
+  refreshCams.addEventListener('click', async () => {
+    await populateCameraList();
+    showToast('Camera list refreshed');
+  });
+  // Re-scan automatically when a camera is plugged in or unplugged —
+  // support for this varies by browser, hence the manual refresh button too.
+  if (navigator.mediaDevices.addEventListener){
+    navigator.mediaDevices.addEventListener('devicechange', populateCameraList);
+  }
   switchCam.addEventListener('click', () => {
     facingMode = facingMode === 'user' ? 'environment' : 'user';
     startCamera();
