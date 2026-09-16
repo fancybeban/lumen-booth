@@ -244,6 +244,14 @@
     border-color:var(--gold);
     box-shadow:0 0 0 2px var(--curtain-light), 0 0 0 3px var(--gold);
   }
+  .swatch-custom{
+    background:var(--curtain-light);
+    border-style:dashed;
+    color:var(--gold);
+    font-size:16px;
+    line-height:1;
+    display:flex; align-items:center; justify-content:center;
+  }
   .sticker-chip{ font-size:16px; padding:6px 12px; }
 
   .shutter-row{
@@ -289,6 +297,63 @@
     text-align:center;
     margin:-6px 0 0;
   }
+
+  .picker-overlay{
+    display:none;
+    position:fixed; inset:0;
+    background:rgba(20,8,10,0.9);
+    align-items:center;
+    justify-content:center;
+    z-index:60;
+    padding:20px;
+  }
+  .picker-overlay.show{ display:flex; }
+  .picker-card{
+    background:var(--curtain-light);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:20px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:14px;
+    max-width:480px;
+    width:100%;
+  }
+  .picker-grid{
+    display:grid;
+    grid-template-columns:repeat(2, 1fr);
+    gap:10px;
+    width:100%;
+  }
+  .picker-thumb{
+    position:relative;
+    aspect-ratio:4/3;
+    border-radius:4px;
+    overflow:hidden;
+    border:3px solid transparent;
+    cursor:pointer;
+    padding:0;
+  }
+  .picker-thumb img{
+    width:100%; height:100%;
+    object-fit:cover;
+    display:block;
+  }
+  .picker-thumb[aria-pressed="true"]{ border-color:var(--gold); }
+  .picker-thumb .badge{
+    position:absolute;
+    top:6px; left:6px;
+    background:var(--gold);
+    color:var(--curtain);
+    font-family:'Bebas Neue', sans-serif;
+    font-size:14px;
+    width:22px; height:22px;
+    border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    opacity:0;
+  }
+  .picker-thumb[aria-pressed="true"] .badge{ opacity:1; }
 
   .toast{
     position:fixed;
@@ -385,10 +450,23 @@
     <p class="edit-hint">Frame, color and emoji still adjustable above — pick again to update your strip.</p>
     <div class="result-actions">
       <button class="ghost-btn" id="retakeBtn">↺ Retake</button>
+      <button class="ghost-btn" id="choosePhotosBtn" style="display:none;">🖼 Choose photos</button>
       <button class="ghost-btn" id="shareBtn" style="display:none;">↗ Share</button>
       <button class="ghost-btn" id="copyBtn">⧉ Copy</button>
       <button class="ghost-btn" id="driveBtn">☁ Save to Drive</button>
       <button class="shutter" id="downloadBtn">⬇ Download</button>
+    </div>
+  </div>
+
+  <!-- Photo picker — shown when the layout needs fewer shots than the burst -->
+  <div class="picker-overlay" id="pickerOverlay">
+    <div class="picker-card">
+      <p class="edit-hint" id="pickerHint" style="margin-bottom:2px;">Pick your favorites</p>
+      <div class="picker-grid" id="pickerGrid"></div>
+      <div class="result-actions">
+        <button class="ghost-btn" id="pickerAutoBtn">Use first ones</button>
+        <button class="shutter" id="pickerConfirmBtn" disabled>Use these</button>
+      </div>
     </div>
   </div>
 
@@ -405,6 +483,15 @@
   // below. Leave it as-is to keep Drive saving disabled.
   const GOOGLE_CLIENT_ID = '999296506720-9ba50fhakq3u09idl07hitatd5k3h2gg.apps.googleusercontent.com';
 
+  // Preset frame images hosted alongside this file in your repo. Put your
+  // image files in a "frames" folder next to index.html, then list their
+  // filenames here — they'll show up as extra swatches automatically,
+  // on every device, with nothing to re-upload.
+  const CUSTOM_FRAMES = [
+    // 'frames/floral.png',
+    // 'frames/birthday.png',
+  ];
+
   const video = document.getElementById('video');
   const cameraFrame = document.getElementById('cameraFrame');
   const flashEl = document.getElementById('flash');
@@ -419,12 +506,18 @@
   const resultWrap = document.getElementById('resultWrap');
   const resultCanvas = document.getElementById('resultCanvas');
   const retakeBtn = document.getElementById('retakeBtn');
+  const choosePhotosBtn = document.getElementById('choosePhotosBtn');
   const downloadBtn = document.getElementById('downloadBtn');
   const shareBtn = document.getElementById('shareBtn');
   const copyBtn = document.getElementById('copyBtn');
   const driveBtn = document.getElementById('driveBtn');
   const toast = document.getElementById('toast');
   const captionInput = document.getElementById('captionInput');
+  const pickerOverlay = document.getElementById('pickerOverlay');
+  const pickerGrid = document.getElementById('pickerGrid');
+  const pickerHint = document.getElementById('pickerHint');
+  const pickerAutoBtn = document.getElementById('pickerAutoBtn');
+  const pickerConfirmBtn = document.getElementById('pickerConfirmBtn');
 
   let capturedShots = null; // raw, unfiltered captures — kept so everything stays editable after the fact
 
@@ -438,6 +531,10 @@
     { id:'grid4',  label:'Grid ×4',  count:4, cols:2 },
     { id:'single', label:'Single',   count:1, cols:1 },
   ];
+  // Always shoot this many photos regardless of layout, so layouts that
+  // need fewer (Single, Strip ×3) can offer a choice of favorites instead
+  // of just using whichever shots happened to come first.
+  const POOL_SIZE = Math.max(...LAYOUTS.map(l => l.count));
   const FILTERS = [
     { id:'none',  label:'Original', css:'none' },
     { id:'mono',  label:'B&W',      css:'grayscale(1) contrast(1.1)' },
@@ -508,6 +605,77 @@
     b.setAttribute('aria-label', item.label);
     return b;
   });
+
+  // ---- Custom frame: lets you use your own uploaded image as the
+  // strip's background instead of a solid preset color.
+  const colorRow = document.getElementById('colorRow');
+
+  // Preset frames from CUSTOM_FRAMES — load each and add it as a swatch
+  // the moment it's ready, so a missing/typo'd file just gets skipped.
+  CUSTOM_FRAMES.forEach((path, i) => {
+    const img = new Image();
+    img.onload = () => {
+      const item = { id:'preset-frame-' + i, label: path.split('/').pop(), type:'image', img };
+      const b = document.createElement('button');
+      b.className = 'swatch';
+      b.style.backgroundImage = `url(${path})`;
+      b.style.backgroundSize = 'cover';
+      b.style.backgroundPosition = 'center';
+      b.title = item.label;
+      b.setAttribute('aria-label', item.label);
+      b.setAttribute('aria-pressed', 'false');
+      b.addEventListener('click', () => {
+        state.color = item;
+        [...colorRow.children].forEach(c => c.setAttribute('aria-pressed','false'));
+        b.setAttribute('aria-pressed','true');
+        if (capturedShots) renderComposition();
+      });
+      colorRow.insertBefore(b, customSwatch);
+    };
+    img.onerror = () => console.warn('Lumen Booth: could not load frame image at', path);
+    img.src = path;
+  });
+
+  const customFrameInput = document.createElement('input');
+  customFrameInput.type = 'file';
+  customFrameInput.accept = 'image/*';
+  customFrameInput.style.display = 'none';
+  document.body.appendChild(customFrameInput);
+
+  const customSwatch = document.createElement('button');
+  customSwatch.className = 'swatch swatch-custom';
+  customSwatch.title = 'Upload your own frame image';
+  customSwatch.setAttribute('aria-label', 'Upload custom frame');
+  customSwatch.textContent = '+';
+  colorRow.appendChild(customSwatch);
+
+  let customColorItem = null;
+
+  customSwatch.addEventListener('click', () => customFrameInput.click());
+
+  customFrameInput.addEventListener('change', () => {
+    const file = customFrameInput.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        customColorItem = { id:'custom', label:'Custom', type:'image', img };
+        customSwatch.textContent = '';
+        customSwatch.style.backgroundImage = `url(${reader.result})`;
+        customSwatch.style.backgroundSize = 'cover';
+        customSwatch.style.backgroundPosition = 'center';
+        state.color = customColorItem;
+        [...colorRow.children].forEach(c => c.setAttribute('aria-pressed','false'));
+        customSwatch.setAttribute('aria-pressed','true');
+        if (capturedShots) renderComposition();
+        showToast('Custom frame applied');
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+
   buildOptionRow(document.getElementById('stickerRow'), STICKERS, 'sticker', item => {
     const b = document.createElement('button');
     b.className = 'chip sticker-chip';
@@ -626,13 +794,14 @@
     flashEl.classList.add('on');
   }
 
+  let selectedShotIndices = null; // which of the pool shots are used, in original order
+
   async function runCaptureSequence(){
     startBtn.disabled = true;
-    const layout = state.layout;
     const shots = [];
     shotCounter.style.display = 'block';
-    for(let i=0;i<layout.count;i++){
-      shotCounter.textContent = `SHOT ${i+1} / ${layout.count}`;
+    for(let i=0;i<POOL_SIZE;i++){
+      shotCounter.textContent = `SHOT ${i+1} / ${POOL_SIZE}`;
       await countdownTo(3);
       flashPop();
       await sleep(120);
@@ -641,8 +810,14 @@
     }
     shotCounter.style.display = 'none';
     capturedShots = shots;
-    renderComposition();
     startBtn.disabled = false;
+
+    if (state.layout.count >= POOL_SIZE){
+      selectedShotIndices = shots.map((_, i) => i);
+      renderComposition();
+    }else{
+      openPicker();
+    }
   }
 
   // Rebuilds the strip from the stored raw shots using whatever layout,
@@ -652,7 +827,10 @@
     if (!capturedShots) return;
     const layout = state.layout;
     const count = Math.min(layout.count, capturedShots.length);
-    const shots = capturedShots.slice(0, count);
+    const indices = (selectedShotIndices && selectedShotIndices.length === count)
+      ? selectedShotIndices
+      : capturedShots.map((_, i) => i).slice(0, count);
+    const shots = indices.map(i => capturedShots[i]);
     const cols = Math.min(layout.cols, count);
     const rows = Math.ceil(count / cols);
 
@@ -669,8 +847,17 @@
     canvas.height = canvasH;
     const ctx = canvas.getContext('2d');
 
-    ctx.fillStyle = state.color.hex;
-    ctx.fillRect(0,0,canvasW,canvasH);
+    if (state.color.type === 'image'){
+      const img = state.color.img;
+      const iAspect = img.width/img.height, dAspect = canvasW/canvasH;
+      let isx,isy,isw,ish;
+      if (iAspect > dAspect){ ish = img.height; isw = ish*dAspect; isx=(img.width-isw)/2; isy=0; }
+      else{ isw = img.width; ish = isw/dAspect; isx=0; isy=(img.height-ish)/2; }
+      ctx.drawImage(img, isx,isy,isw,ish, 0,0,canvasW,canvasH);
+    }else{
+      ctx.fillStyle = state.color.hex;
+      ctx.fillRect(0,0,canvasW,canvasH);
+    }
 
     shots.forEach((shotCanvas, i) => {
       const col = i % cols;
@@ -712,13 +899,80 @@
 
     resultWrap.classList.add('show');
     cameraFrame.closest('.camera-panel').style.display = 'none';
+    choosePhotosBtn.style.display = (POOL_SIZE > layout.count) ? 'inline-flex' : 'none';
   }
+
+  // ---- Photo picker: shown right after a burst when the chosen layout
+  // needs fewer shots than were taken, and reopenable any time after via
+  // the "Choose photos" button so a later layout change can re-pick too.
+  function openPicker(){
+    const needed = state.layout.count;
+    pickerHint.textContent = `Pick ${needed} photo${needed === 1 ? '' : 's'} for your strip`;
+    pickerGrid.innerHTML = '';
+
+    const preselected = (selectedShotIndices && selectedShotIndices.length === needed)
+      ? selectedShotIndices
+      : capturedShots.map((_, i) => i).slice(0, needed);
+    let picked = [...preselected];
+
+    capturedShots.forEach((shotCanvas, i) => {
+      const b = document.createElement('button');
+      b.className = 'picker-thumb';
+      b.setAttribute('aria-pressed', picked.includes(i) ? 'true' : 'false');
+      const img = document.createElement('img');
+      img.src = shotCanvas.toDataURL('image/jpeg', 0.7);
+      const badge = document.createElement('span');
+      badge.className = 'badge';
+      badge.textContent = picked.includes(i) ? (picked.indexOf(i) + 1) : '';
+      b.appendChild(img);
+      b.appendChild(badge);
+      b.addEventListener('click', () => {
+        const idx = picked.indexOf(i);
+        if (idx > -1){
+          picked.splice(idx, 1);
+        }else{
+          if (picked.length >= needed){
+            showToast(`You can only pick ${needed}`);
+            return;
+          }
+          picked.push(i);
+        }
+        [...pickerGrid.children].forEach((thumb, ti) => {
+          const on = picked.includes(ti);
+          thumb.setAttribute('aria-pressed', on ? 'true' : 'false');
+          thumb.querySelector('.badge').textContent = on ? (picked.indexOf(ti) + 1) : '';
+        });
+        pickerConfirmBtn.disabled = picked.length !== needed;
+      });
+      pickerGrid.appendChild(b);
+    });
+
+    pickerConfirmBtn.disabled = picked.length !== needed;
+    pickerConfirmBtn.onclick = () => {
+      selectedShotIndices = [...picked].sort((a,b) => a-b); // keep original shot order
+      closePicker();
+      renderComposition();
+    };
+    pickerAutoBtn.onclick = () => {
+      selectedShotIndices = capturedShots.map((_, i) => i).slice(0, needed);
+      closePicker();
+      renderComposition();
+    };
+
+    pickerOverlay.classList.add('show');
+  }
+  function closePicker(){
+    pickerOverlay.classList.remove('show');
+  }
+  choosePhotosBtn.addEventListener('click', openPicker);
 
   startBtn.addEventListener('click', runCaptureSequence);
 
   retakeBtn.addEventListener('click', () => {
     capturedShots = null;
+    selectedShotIndices = null;
     resultWrap.classList.remove('show');
+    choosePhotosBtn.style.display = 'none';
     cameraFrame.closest('.camera-panel').style.display = 'block';
   });
 
